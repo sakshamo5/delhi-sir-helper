@@ -1,10 +1,5 @@
 """
-ECI Re-downloader — Incomplete Constituencies
-===============================================
-Re-runs the downloader only for constituencies that have suspiciously
-few PDFs (below a threshold), picking up from where they left off.
-
-Already-downloaded files are skipped automatically.
+Rerunner for constituency which had low pdf count 
 """
 
 import logging
@@ -19,9 +14,6 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 
 STATE_CODE   = "U05"
 OUTPUT_DIR   = Path("eci_pdfs")
@@ -29,7 +21,6 @@ TEMP_DIR     = Path("eci_pdfs/_tmp_rerun")
 LOG_FILE     = Path("eci_rerun.log")
 
 # Constituencies to re-check (those with suspiciously low counts)
-# Add any others you want to verify
 RERUN_CONSTITUENCIES = [3, 6, 7, 8]
 
 MAX_PARTS      = 300
@@ -40,9 +31,6 @@ DOWNLOAD_WAIT  = 45
 POLL_INTERVAL  = 0.5
 
 
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,9 +43,6 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Helpers (same as main downloader)
-# ---------------------------------------------------------------------------
 
 def make_url(state, c, p):
     return f"https://www.eci.gov.in/sir/f4/U05/data/OLDSIRROLL/{state}/{c}/{state}_{c}_{p}.pdf"
@@ -140,14 +125,10 @@ def download_one(driver, url, dest_path, temp_dir):
     return "fail"
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main():
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Show current counts before re-run
     log.info("Current PDF counts for target constituencies:")
     for c in RERUN_CONSTITUENCIES:
         folder = OUTPUT_DIR / STATE_CODE / str(c)
@@ -188,7 +169,6 @@ def main():
         driver.quit()
         shutil.rmtree(TEMP_DIR, ignore_errors=True)
 
-    # Updated counts after re-run
     log.info("=" * 50)
     log.info("Updated PDF counts:")
     for c in RERUN_CONSTITUENCIES:
