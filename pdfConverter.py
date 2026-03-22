@@ -1,24 +1,18 @@
-# Install once (if not installed)
-# pip install pdfplumber tqdm
-
 from pathlib import Path
 import pdfplumber
 from multiprocessing.pool import ThreadPool
 from tqdm import tqdm
 
-# ===== CONFIG =====
 INPUT_ROOT  = Path('./U05')        # local folder
 OUTPUT_ROOT = Path('./U05_txt')    # output folder
 WORKERS     = 15
 
 OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
-# ===== FIND FILES =====
 all_pdfs = sorted(INPUT_ROOT.rglob('*.pdf'))
 print(f'PDFs found : {len(all_pdfs)}')
 print(f'Output     : {OUTPUT_ROOT}')
 
-# ===== CONVERT FUNCTION =====
 def convert(args):
     pdf_path, txt_path = args
     try:
@@ -37,7 +31,6 @@ def convert(args):
     except Exception as e:
         return str(e)
 
-# ===== BUILD TASKS =====
 tasks, skipped = [], 0
 for pdf in all_pdfs:
     txt = OUTPUT_ROOT / pdf.relative_to(INPUT_ROOT).with_suffix('.txt')
@@ -49,7 +42,6 @@ for pdf in all_pdfs:
 
 print(f'To convert : {len(tasks)}  |  Skipped : {skipped}')
 
-# ===== RUN MULTITHREADING =====
 failed = []
 
 with ThreadPool(WORKERS) as pool:
@@ -59,7 +51,6 @@ with ThreadPool(WORKERS) as pool:
         desc='Converting'
     ))
 
-# ===== HANDLE FAILURES =====
 for (pdf, _), result in zip(tasks, results):
     if result is not True:
         failed.append(f'{pdf}  →  {result}')
@@ -70,7 +61,6 @@ print(f'❌ Failed : {len(failed)}')
 if failed:
     (OUTPUT_ROOT / 'failed.txt').write_text('\n'.join(failed), encoding='utf-8')
 
-# ===== SAMPLE OUTPUT =====
 sample = next(OUTPUT_ROOT.rglob('*.txt'), None)
 if sample:
     print(f'\nSample ({sample.name}):\n')
