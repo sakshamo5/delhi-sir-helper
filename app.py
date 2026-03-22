@@ -2,7 +2,6 @@ import streamlit as st
 import os
 import re
 import sqlite3
-import pandas as pd
 from rapidfuzz import fuzz
 
 #config
@@ -10,7 +9,7 @@ DB_FOLDER      = "constituency_dbs"
 NAME_THRESHOLD = 80
 RELATIVE_THRESHOLD = 80
 AC_MAPPING_URL = "https://ceodelhi.gov.in/PDFFolders/2025/AC_Mapping_from_2002_to_2025.pdf"
-CHUNK_SIZE     = 5000
+CHUNK_SIZE     = 2000
 
 st.set_page_config(page_title="Electoral Fuzzy Search", layout="wide")
 
@@ -105,7 +104,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-
 def normalize(text):
     text = text.lower()
     text = re.sub(r'[^a-z\s]', '', text)
@@ -132,7 +130,6 @@ def get_constituencies():
     for f in os.listdir(DB_FOLDER):
         if f.endswith(".db"):
             names.append(f.replace(".db", ""))
-    # sort numerically
     names.sort(key=lambda x: int(x) if x.isdigit() else 0)
     return names
 
@@ -144,132 +141,109 @@ def has_prebuilt_index():
         return False
     for f in os.listdir(DB_FOLDER):
         if f.endswith(".db"):
-            conn = sqlite3.connect(os.path.join(DB_FOLDER, f))
-            result = index_exists(conn)
-            conn.close()
-            if result:
-                return True
+            path = os.path.join(DB_FOLDER, f)
+            try:
+                conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+                result = index_exists(conn)
+                conn.close()
+                if result:
+                    return True
+            except Exception:
+                pass
     return False
 
 
-def query_db(constituency, gender, age_min, age_max):
+def search_db_streaming(ac, gender, age_min, age_max, n_name, n_rel):
     """
-    Multi-DB version: scans individual constituency DB files.
-    Keeps output format EXACTLY same as before.
+    Stream rows from one constituency DB in small batches.
+    Fuzzy-match on the fly — never builds a full in-memory row list.
+    Returns only matches (no intermediate storage of all rows).
     """
-    rows = []
+    path = db_path(ac)
+    if not os.path.exists(path):
+        return []
 
-    if constituency:
-        ac_list = [constituency] if isinstance(constituency, str) else list(constituency)
-    else:
-        ac_list = []
-        for f in os.listdir(DB_FOLDER):
-            if f.endswith(".db"):
-                ac_list.append(f.replace(".db", ""))
+    results = []
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
 
-    for ac in ac_list:
-        path = db_path(ac)
+        use_index = index_exists(conn)
+        table     = "voter_index" if use_index else "voter"
 
-        if not os.path.exists(path):
-            continue
+        cols   = "constituency, part, sNo, gender, age, raw, norm" if use_index else "constituency, part, sNo, gender, age, row"
+        query  = f"SELECT {cols} FROM {table} WHERE 1=1"
+        params = []
 
-        conn = sqlite3.connect(path)
+        if gender:
+            query += " AND gender = ?"
+            params.append(gender)
+        if age_min is not None and age_max is not None:
+            query += " AND age BETWEEN ? AND ?"
+            params.extend([age_min, age_max])
 
-        try:
-            use_index = index_exists(conn)
-            table     = "voter_index" if use_index else "voter"
+        cur = conn.execute(query, params)
 
-            query  = f"SELECT constituency, part, sNo, gender, age, {'raw, norm' if use_index else 'row'} FROM {table} WHERE 1=1"
-            params = []
+        while True:
+            batch = cur.fetchmany(CHUNK_SIZE)
+            if not batch:
+                break
+            for rec in batch:
+                raw  = str(rec["raw"]  if use_index else rec["row"])
+                norm = str(rec["norm"] if use_index else normalize(raw))
+                if len(raw) <= 5:
+                    continue
+                # Early-exit: check name score first (cheaper gate)
+                name_score = fuzz.partial_ratio(n_name, norm)
+                if name_score < NAME_THRESHOLD:
+                    continue
+                rel_score = fuzz.partial_ratio(n_rel, norm)
+                if rel_score < RELATIVE_THRESHOLD:
+                    continue
+                results.append({
+                    "constituency":   rec["constituency"] or ac,
+                    "part":           rec["part"],
+                    "sNo":            rec["sNo"],
+                    "gender":         rec["gender"],
+                    "age":            int(rec["age"] or 0),
+                    "name_score":     name_score,
+                    "relative_score": rel_score,
+                    "text":           raw,
+                })
 
-            if gender:
-                query += " AND gender = ?"
-                params.append(gender)
+        conn.close()
+    except Exception:
+        pass
 
-            if age_min is not None and age_max is not None:
-                query += " AND age BETWEEN ? AND ?"
-                params.extend([age_min, age_max])
-
-            df = pd.read_sql_query(query, conn, params=params)
-
-            for _, rec in df.iterrows():
-                if use_index:
-                    raw  = str(rec.get("raw", ""))
-                    norm = str(rec.get("norm", ""))
-                else:
-                    raw  = str(rec.get("row", ""))
-                    norm = normalize(raw)
-
-                if len(raw) > 5:
-                    rows.append({
-                        "constituency": rec.get("constituency", ac),
-                        "part":         rec.get("part", ""),
-                        "sNo":          rec.get("sNo", ""),
-                        "gender":       rec.get("gender", ""),
-                        "age":          int(rec.get("age") or 0),
-                        "raw":          raw,
-                        "norm":         norm,
-                    })
-
-        except Exception:
-            continue
-
-        finally:
-            conn.close()
-
-    return rows
+    return results
 
 
-def do_fuzzy_search(rows, name, relative):
+def do_fuzzy_search(ac_list, gender, age_min, age_max, name, relative):
+    """Single / small-list constituency search — no progress UI."""
     n_name = normalize(name)
     n_rel  = normalize(relative)
     results = []
-    for row in rows:
-        name_score = fuzz.partial_ratio(n_name, row["norm"])
-        rel_score  = fuzz.partial_ratio(n_rel,  row["norm"])
-        if name_score >= NAME_THRESHOLD and rel_score >= RELATIVE_THRESHOLD:
-            results.append({
-                "constituency":   row["constituency"],
-                "part":           row["part"],
-                "sNo":            row["sNo"],
-                "gender":         row["gender"],
-                "age":            row["age"],
-                "name_score":     name_score,
-                "relative_score": rel_score,
-                "text":           row["raw"],
-            })
+    for ac in ac_list:
+        results.extend(search_db_streaming(ac, gender, age_min, age_max, n_name, n_rel))
     results.sort(key=lambda x: x["name_score"] + x["relative_score"], reverse=True)
     return results
 
 
-def do_fuzzy_search_chunked(rows, name, relative, status_el, progress_el):
-    n_name  = normalize(name)
-    n_rel   = normalize(relative)
-    results = []
-    total   = len(rows)
+def do_fuzzy_search_all(gender, age_min, age_max, name, relative, status_el, progress_el):
+    """All-constituencies search — one DB at a time with live progress."""
+    n_name    = normalize(name)
+    n_rel     = normalize(relative)
+    results   = []
+    ac_list   = get_constituencies()
+    total_acs = len(ac_list)
 
-    for start in range(0, total, CHUNK_SIZE):
-        chunk = rows[start : start + CHUNK_SIZE]
-        for row in chunk:
-            name_score = fuzz.partial_ratio(n_name, row["norm"])
-            rel_score  = fuzz.partial_ratio(n_rel,  row["norm"])
-            if name_score >= NAME_THRESHOLD and rel_score >= RELATIVE_THRESHOLD:
-                results.append({
-                    "constituency":   row["constituency"],
-                    "part":           row["part"],
-                    "sNo":            row["sNo"],
-                    "gender":         row["gender"],
-                    "age":            row["age"],
-                    "name_score":     name_score,
-                    "relative_score": rel_score,
-                    "text":           row["raw"],
-                })
-        pct = min(start + CHUNK_SIZE, total)
+    for idx, ac in enumerate(ac_list, 1):
         status_el.markdown(
-            f'<div class="age-hint">Scanned {pct:,} / {total:,} rows — {len(results)} match(es) so far…</div>',
+            f'<div class="age-hint">Scanning AC {ac} ({idx}/{total_acs}) — {len(results)} match(es) so far…</div>',
             unsafe_allow_html=True
         )
-        progress_el.progress(pct / total)
+        progress_el.progress(idx / total_acs)
+        results.extend(search_db_streaming(ac, gender, age_min, age_max, n_name, n_rel))
 
     results.sort(key=lambda x: x["name_score"] + x["relative_score"], reverse=True)
     return results
@@ -337,7 +311,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Show index status
 if not has_prebuilt_index():
     st.markdown("""
     <div class="no-index-warn">
@@ -394,8 +367,9 @@ if page == "Search by Constituency":
             st.warning("Please enter both Name and Relative Name.")
         else:
             with st.spinner("Searching…"):
-                rows = query_db(selected_constituencies, selected_gender, age_min, age_max)
-                st.session_state.results_single = do_fuzzy_search(rows, name, relative)
+                st.session_state.results_single = do_fuzzy_search(
+                    selected_constituencies, selected_gender, age_min, age_max, name, relative
+                )
 
     if st.session_state.results_single or (selected_constituencies and name and relative):
         render_results(st.session_state.results_single)
@@ -433,10 +407,12 @@ else:
         if not name_all or not relative_all:
             st.warning("Please enter both Name and Relative Name.")
         else:
-            rows        = query_db(None, selected_gender_all, age_min_all, age_max_all)
             status_el   = st.empty()
             progress_el = st.empty()
-            results     = do_fuzzy_search_chunked(rows, name_all, relative_all, status_el, progress_el)
+            results     = do_fuzzy_search_all(
+                selected_gender_all, age_min_all, age_max_all,
+                name_all, relative_all, status_el, progress_el
+            )
             status_el.empty()
             progress_el.empty()
             st.session_state.results_all = results
