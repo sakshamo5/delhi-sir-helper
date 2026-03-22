@@ -2,11 +2,10 @@ import sqlite3
 import re
 from pathlib import Path
 
-# ---------------- CONFIG ---------------- #
 FOLDER_PATH = Path("eci_pdfs/U05_txt")
 DB_PATH = 'electoral.db'
 
-# ---------------- DB SETUP ---------------- #
+
 conn = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
 
@@ -26,7 +25,6 @@ CREATE TABLE voter (
 
 conn.commit()
 
-# ---------------- HELPERS ---------------- #
 
 def extract_sno(row):
     match = re.match(r'^\d+', row)
@@ -56,7 +54,6 @@ def is_valid_row(row):
         re.match(r'^\d+', row) is not None
     )
 
-# ---------------- PARSER ---------------- #
 
 def parse_file(file_path):
     with open(file_path, encoding='utf-8', errors='ignore') as f:
@@ -86,7 +83,6 @@ def parse_file(file_path):
     return parsed
 
 
-# ---------------- BUILD DB ---------------- #
 
 def build_database():
     print("🚀 Building database (final robust mode)...")
@@ -122,7 +118,6 @@ def build_database():
     print(f"\n✅ TOTAL INSERTED: {total}")
 
 
-# ---------------- INSPECTION ---------------- #
 
 def inspect():
     print("\n📊 INSPECTION")
@@ -152,7 +147,6 @@ def inspect():
         print("\nNo data found.")
 
 
-# ---------------- MAIN ---------------- #
 
 if __name__ == "__main__":
     build_database()
