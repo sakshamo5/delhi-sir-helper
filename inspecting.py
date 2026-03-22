@@ -14,7 +14,6 @@ def print_section(title):
     print("=" * 60)
 
 
-# ---------------- BASIC STATS ---------------- #
 
 def total_constituencies(cursor):
     cursor.execute("SELECT COUNT(DISTINCT constituency) FROM voter")
@@ -71,30 +70,25 @@ def largest_part(cursor):
     return cursor.fetchone()
 
 
-# ---------------- MAIN ---------------- #
 
 def main():
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Total constituencies
     print_section("TOTAL CONSTITUENCIES")
     total = total_constituencies(cursor)
     print(f"Total Constituencies: {total}")
 
-    # Parts per constituency
     print_section("PARTS PER CONSTITUENCY")
     parts = parts_per_constituency(cursor)
     for c, p in parts:
         print(f"Constituency {c} → {p} parts")
 
-    # Rows per constituency
     print_section("ROWS PER CONSTITUENCY")
     rows_const = rows_per_constituency(cursor)
     for c, r in rows_const:
         print(f"Constituency {c} → {r} voters")
 
-    # Rows per part
     print_section("ROWS PER PART")
     rows_part = rows_per_part(cursor)
     for c, p, r in rows_part[:50]:  # limit print
@@ -102,13 +96,11 @@ def main():
 
     print("\n... (showing first 50 only)")
 
-    # Gender distribution
     print_section("GENDER DISTRIBUTION")
     genders = gender_distribution(cursor)
     for g, count in genders:
         print(f"{g} → {count}")
 
-    # Largest part
     print_section("LARGEST PART")
     c, p, total = largest_part(cursor)
     print(f"Constituency {c}, Part {p} → {total} voters")
