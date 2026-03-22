@@ -1,12 +1,6 @@
-"""
-Run this ONCE locally before deploying to Streamlit Cloud:
 
-    python preprocess.py
+#Run this ONCE locally before deploying to Streamlit Cloud:
 
-It reads the `voter` table, normalizes the `row` text,
-and writes a `voter_index` table into the same electoral.db.
-Streamlit app will then read directly from voter_index — no processing per session.
-"""
 
 import sqlite3
 import re
