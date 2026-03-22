@@ -5,13 +5,12 @@ import sqlite3
 import pandas as pd
 from rapidfuzz import fuzz
 
-# ========== CONFIG ==========
+#config
 DB_FOLDER      = "constituency_dbs"
 NAME_THRESHOLD = 80
 RELATIVE_THRESHOLD = 80
 AC_MAPPING_URL = "https://ceodelhi.gov.in/PDFFolders/2025/AC_Mapping_from_2002_to_2025.pdf"
 CHUNK_SIZE     = 5000
-# ============================
 
 st.set_page_config(page_title="Electoral Fuzzy Search", layout="wide")
 
@@ -97,7 +96,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ========== HELPERS ==========
 
 def normalize(text):
     text = text.lower()
@@ -152,11 +150,9 @@ def query_db(constituency, gender, age_min, age_max):
     """
     rows = []
 
-    # Decide which DBs to scan
     if constituency:
         ac_list = [constituency] if isinstance(constituency, str) else list(constituency)
     else:
-        # All constituencies
         ac_list = []
         for f in os.listdir(DB_FOLDER):
             if f.endswith(".db"):
@@ -309,7 +305,6 @@ def age_filter_ui(key_suffix):
     return gender, age_min, age_max
 
 
-# ========== BOOT ==========
 if not os.path.exists(DB_FOLDER):
     st.error(f"Folder `{DB_FOLDER}` not found. Create it and place constituency DBs inside.")
     st.stop()
@@ -319,7 +314,6 @@ if not constituencies:
     st.error("Could not load constituencies. Check DB schema.")
     st.stop()
 
-# ========== TOP BAR ==========
 st.markdown(f"""
 <div class="topbar">
     <div class="main-title">🗳️ Electoral Roll — Fuzzy Search</div>
