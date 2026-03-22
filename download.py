@@ -1,35 +1,3 @@
-"""
-ECI PDF Downloader — Full Automated
-=====================================
-Downloads all Electoral Roll PDFs for Delhi (U05) from the ECI website.
-
-URL pattern:
-  https://www.eci.gov.in/sir/f4/U05/data/OLDSIRROLL/U05/{C}/U05_{C}_{P}.pdf
-  C = constituency number (1 to 70)
-  P = part number (1 to N, stop when server returns 404)
-
-Directory structure saved:
-  eci_pdfs/
-    U05/
-      1/
-        U05_1_1.pdf
-        U05_1_2.pdf
-        ...
-      2/
-        U05_2_1.pdf
-        ...
-
-Strategy:
-  - One Chrome driver per worker thread (thread pool = NUM_WORKERS)
-  - Each worker handles one constituency at a time
-  - Parts are downloaded sequentially within a constituency (stop on 404)
-  - Skip already-downloaded files
-  - Retry logic with exponential backoff
-  - All failures logged to failed_urls.txt for re-runs
-
-Dependencies:
-    pip install selenium webdriver-manager
-"""
 
 import logging
 import queue
@@ -46,28 +14,21 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 
-# ---------------------------------------------------------------------------
-# Configuration — tweak these as needed
-# ---------------------------------------------------------------------------
 
 STATE_CODE    = "U05"
-CONSTITUENCIES = range(1, 71)          # 1 to 70 inclusive
-MAX_PARTS      = 300                   # Safety cap per constituency (stop earlier on 404)
+CONSTITUENCIES = range(1, 71)          
+MAX_PARTS      = 300                   
 
-OUTPUT_DIR     = Path("eci_pdfs")      # Root output folder
+OUTPUT_DIR     = Path("eci_pdfs")      
 LOG_FILE       = Path("eci_download.log")
 
-NUM_WORKERS    = 10                     # Parallel Chrome instances (raise carefully)
+NUM_WORKERS    = 10                     
 MAX_RETRIES    = 3
-DELAY_MIN      = 1.5                   # Seconds between part downloads (per worker)
+DELAY_MIN      = 1.5                  
 DELAY_MAX      = 3.5
-DOWNLOAD_WAIT  = 45                    # Max seconds to wait for a single file
+DOWNLOAD_WAIT  = 45                    
 POLL_INTERVAL  = 0.5
 
-
-# ---------------------------------------------------------------------------
-# Logging — thread-safe (Python's logging module handles this)
-# ---------------------------------------------------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,14 +40,10 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# Global list to collect failed URLs (protected by a lock)
 failed_urls: list[str] = []
 failed_lock = threading.Lock()
 
 
-# ---------------------------------------------------------------------------
-# URL + path helpers
-# ---------------------------------------------------------------------------
 
 def make_url(state: str, constituency: int, part: int) -> str:
     return (
@@ -108,9 +65,7 @@ def filename_from_url(url: str) -> str:
     return url.rstrip("/").split("/")[-1]
 
 
-# ---------------------------------------------------------------------------
-# Chrome driver factory
-# ---------------------------------------------------------------------------
+# Chrome driver 
 
 def build_driver(download_dir: Path) -> webdriver.Chrome:
     abs_dl = str(download_dir.resolve())
@@ -133,7 +88,7 @@ def build_driver(download_dir: Path) -> webdriver.Chrome:
             "download.default_directory":         abs_dl,
             "download.prompt_for_download":       False,
             "download.directory_upgrade":         True,
-            "plugins.always_open_pdf_externally": True,   # Disable PDF viewer → force download
+            "plugins.always_open_pdf_externally": True,   
             "safebrowsing.enabled":               True,
         },
     )
@@ -145,7 +100,6 @@ def build_driver(download_dir: Path) -> webdriver.Chrome:
         "Page.addScriptToEvaluateOnNewDocument",
         {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"},
     )
-    # Allow downloads in headless mode (blocked by default)
     driver.execute_cdp_cmd(
         "Browser.setDownloadBehavior",
         {"behavior": "allow", "downloadPath": abs_dl},
@@ -154,9 +108,7 @@ def build_driver(download_dir: Path) -> webdriver.Chrome:
     return driver
 
 
-# ---------------------------------------------------------------------------
 # Download helpers
-# ---------------------------------------------------------------------------
 
 def wait_for_download(temp_dir: Path, filename: str) -> Optional[Path]:
     """Wait until the file exists and has no .crdownload partner."""
@@ -180,7 +132,7 @@ def is_404_page(temp_dir: Path, filename: str) -> bool:
     """
     f = temp_dir / filename
     if not f.exists():
-        return True   # Nothing downloaded — treat as 404
+        return True   
     with open(f, "rb") as fh:
         header = fh.read(4)
     if header != b"%PDF":
@@ -202,11 +154,9 @@ def download_one(driver: webdriver.Chrome, url: str,
     """
     filename = filename_from_url(url)
 
-    # Skip already-downloaded
     if dest_path.exists() and dest_path.stat().st_size > 1024:
         return "skip"
 
-    # Clean stale temp files
     for stale in temp_dir.glob(f"{filename}*"):
         stale.unlink(missing_ok=True)
 
@@ -221,7 +171,6 @@ def download_one(driver: webdriver.Chrome, url: str,
         completed = wait_for_download(temp_dir, filename)
 
         if completed is None:
-            # Nothing appeared — likely a 404 or network error
             if is_404_page(temp_dir, filename):
                 return "404"
             log.warning("Attempt %d — timeout waiting for %s", attempt, filename)
@@ -232,7 +181,6 @@ def download_one(driver: webdriver.Chrome, url: str,
                 shutil.move(str(completed), str(dest_path))
                 return "ok"
             else:
-                # Not a PDF — probably a 404 HTML page
                 completed.unlink(missing_ok=True)
                 return "404"
 
@@ -243,9 +191,7 @@ def download_one(driver: webdriver.Chrome, url: str,
     return "fail"
 
 
-# ---------------------------------------------------------------------------
-# Worker — processes one constituency at a time from the queue
-# ---------------------------------------------------------------------------
+#  processes one constituency at a time from the queue
 
 def worker(worker_id: int, constituency_queue: queue.Queue) -> None:
     temp_dir = make_temp_dir(worker_id)
@@ -304,21 +250,16 @@ def worker(worker_id: int, constituency_queue: queue.Queue) -> None:
         log.info("Worker %d stopped", worker_id)
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     log.info("Output root : %s", OUTPUT_DIR.resolve())
     log.info("Constituencies: %d  |  Workers: %d", len(CONSTITUENCIES), NUM_WORKERS)
 
-    # Fill the work queue
     q: queue.Queue = queue.Queue()
     for c in CONSTITUENCIES:
         q.put(c)
 
-    # Launch worker threads
     threads = []
     for i in range(NUM_WORKERS):
         t = threading.Thread(target=worker, args=(i + 1, q), daemon=True)
@@ -326,11 +267,9 @@ def main() -> None:
         threads.append(t)
         time.sleep(1.5)   # Stagger driver startup to avoid Chrome conflicts
 
-    # Wait for all work to finish
     for t in threads:
         t.join()
 
-    # Summary
     log.info("=" * 60)
     log.info("All done.  Failed URLs: %d", len(failed_urls))
 
