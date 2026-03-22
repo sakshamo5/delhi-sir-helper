@@ -92,6 +92,15 @@ st.markdown("""
         background: #2a0000; border: 1px solid #f05050; border-radius: 6px;
         padding: 0.6rem 1rem; font-size: 0.85rem; color: #f08080; margin-bottom: 1rem;
     }
+    .pdf-btn {
+        display: inline-block; margin-top: 0.6rem;
+        background: transparent; color: #f0a500;
+        border: 1px solid #f0a500; border-radius: 4px;
+        padding: 3px 14px; font-size: 0.78rem; font-family: 'Rajdhani', sans-serif;
+        font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+        text-decoration: none; cursor: pointer;
+    }
+    .pdf-btn:hover { background: #f0a500; color: #0f1117; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -269,6 +278,12 @@ def do_fuzzy_search_chunked(rows, name, relative, status_el, progress_el):
 def result_card_html(i, r):
     gender_badge_cls = "badge-male" if r["gender"] == "M" else "badge-female"
     gender_label     = "Male"       if r["gender"] == "M" else "Female"
+    constituency     = str(r['constituency']).zfill(3)
+    part             = str(r['part']).zfill(3)
+    pdf_url = (
+        f"https://sakshamo5.github.io/Delhi-SIR-Helper/eci_pdfs/U05/"
+        f"{constituency}/U05_{constituency}_{part}.pdf"
+    )
     return f"""
     <div class="result-card">
         <div class="result-header">#{i} — S.No {r['sNo']} &nbsp;|&nbsp; Part {r['part']} &nbsp;|&nbsp; AC {r['constituency']}</div>
@@ -278,6 +293,7 @@ def result_card_html(i, r):
         <span class="badge badge-age">Age {r['age']} (in 2002)</span>
         <span class="badge badge-ac">AC {r['constituency']}</span>
         <div class="row-text">{r['text']}</div>
+        <a class="pdf-btn" href="{pdf_url}" target="_blank">&#128196; View PDF</a>
     </div>"""
 
 
@@ -427,4 +443,3 @@ else:
 
     if st.session_state.results_all or (name_all and relative_all):
         render_results(st.session_state.results_all)
-
