@@ -278,8 +278,8 @@ def do_fuzzy_search_chunked(rows, name, relative, status_el, progress_el):
 def result_card_html(i, r):
     gender_badge_cls = "badge-male" if r["gender"] == "M" else "badge-female"
     gender_label     = "Male"       if r["gender"] == "M" else "Female"
-    constituency     = str(r['constituency']).zfill(3)
-    part             = str(r['part']).zfill(3)
+    constituency     = str(r['constituency'])
+    part             = str(r['part'])
     pdf_url = (
         f"https://sakshamo5.github.io/Delhi-SIR-Helper/eci_pdfs/U05/"
         f"{constituency}/U05_{constituency}_{part}.pdf"
